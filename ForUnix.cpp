@@ -5,14 +5,29 @@ public:
     GitFetchProcess(const std::string& folderPath) : folderPath_(folderPath) {}
 
     bool Start() {
-        std::string fetchCommand = "cd \"" + folderPath_ + "\" && git fetch origin";
-        int status = system(fetchCommand.c_str());
+        pid_t childPid = fork(); // Create a new child process
 
-        if (status == 0) {
-            return true;
-        } else {
-            std::cerr << "Failed to start the process." << '\n';
+        if (childPid == -1) {
+            std::cerr << "Failed to fork a new process." << std::endl;
             return false;
+        }
+
+        if (childPid == 0) {
+            std::string fetchCommand = "cd \"" + folderPath_ + "\" && git fetch origin";
+            int execResult = execlp("sh", "sh", "-c", fetchCommand.c_str(), nullptr);
+
+            std::cerr << "Failed to execute the command in the child process. Error code: " << execResult << std::endl;
+            exit(1);
+        } else {
+            int status;
+            waitpid(childPid, &status, 0);
+
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                return true;
+            } else {
+                std::cerr << "Child process failed to execute the command." << std::endl;
+                return false;
+            }
         }
     }
 
