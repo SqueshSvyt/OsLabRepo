@@ -11,11 +11,12 @@ int Run();
 #elif unix
 
 #include <iostream>
-#include <string>
 #include <cstdlib>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
+#include <sched.h>
+
 
 int Run();
 

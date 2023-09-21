@@ -1,109 +1,57 @@
 #include "Linker.h"
 
-class GitFetchProcess {
-public:
-    GitFetchProcess(const std::string& folderPath) : folderPath_(folderPath) {}
-
-    bool Start() {
-        pid_t childPid = fork(); // Create a new child process
-
-        if (childPid == -1) {
-            std::cerr << "Failed to fork a new process." << std::endl;
-            return false;
-        }
-
-        if (childPid == 0) {
-            std::string fetchCommand = "cd \"" + folderPath_ + "\" && git fetch origin";
-            int execResult = execlp("sh", "sh", "-c", fetchCommand.c_str(), nullptr);
-
-            std::cerr << "Failed to execute the command in the child process. Error code: " << execResult << std::endl;
-            exit(1);
-        } else {
-            int status;
-            waitpid(childPid, &status, 0);
-
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-                return true;
-            } else {
-                std::cerr << "Child process failed to execute the command." << std::endl;
-                return false;
-            }
-        }
-    }
-
-    bool WaitForCompletion(int timeoutSeconds) {
-        int pid = -1;
-        int status = 0;
-        int result = 0;
-
-        pid = fork();
-
-        if (pid == -1) {
-            std::cerr << "Failed to fork." << '\n';
-            return false;
-        }
-
-        if (pid == 0) {
-            // Child process
-            std::string fetchCommand = "cd \"" + folderPath_ + "\" && git fetch origin";
-            result = std::system(fetchCommand.c_str());
-            exit(result);
-        } else {
-            // Parent process
-            int waitResult = 0;
-            int timeoutCounter = 0;
-
-            do {
-                waitResult = waitpid(pid, &status, WNOHANG);
-                if (waitResult == -1) {
-                    std::cerr << "Waiting for process failed." << '\n';
-                    return false;
-                }
-
-                if (waitResult == 0) {
-                    // Process is still running
-                    sleep(1);
-                    timeoutCounter++;
-                } else {
-                    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-                        return true;
-                    } else {
-                        std::cerr << "Process did not complete successfully." << '\n';
-                        return false;
-                    }
-                }
-            } while (timeoutCounter < timeoutSeconds);
-
-            // Timeout reached
-            std::cerr << "Process did not complete within the specified timeout." << '\n';
-            return false;
-        }
-    }
-
-private:
-    std::string folderPath_;
-};
-
 int Run() {
-    std::cout << "Enter the folder path containing Git repositories: ";
     std::string folderPath;
+    int priority;
+
+    std::cout << "Enter the folder path: ";
     std::cin >> folderPath;
 
-    GitFetchProcess gitProcess(folderPath);
+    std::cout << "Enter the process priority (-20 to 19): ";
+    std::cin >> priority;
 
-    if (gitProcess.Start()) {
-        std::cout << "Process started successfully." << '\n';
-        std::cout << "Process ID (PID) on Linux: " << getpid() << '\n';
+    if (priority < -20 || priority > 19) {
+        std::cerr << "Invalid priority value. Priority must be between -20 and 19." << std::endl;
+        return 1;
+    }
 
+    int pid = fork();  // Створюємо дочірній процес
 
-        // Wait for process to complete or forcefully terminate after 1 minute
-        if (gitProcess.WaitForCompletion(60)) {
-            std::cout << "Process completed successfully." << '\n';
-        } else {
-            std::cout << "Process did not complete within the specified timeout." << '\n';
+    if (pid == -1) {
+        std::cerr << "Failed to fork a child process" << std::endl;
+        return 1;
+    } else if (pid == 0) {
+        // Дочірній процес
+        std::string gitCommand = "git fetch origin";
+        std::string shellCommand = "cd " + folderPath + " && " + gitCommand;
+
+        // Встановлюємо новий пріоритет процесу
+        if (nice(priority) == -1) {
+            std::cerr << "Failed to set process priority" << std::endl;
+            return 1;
         }
+
+        // Запускаємо Git-команду
+        int result = system(shellCommand.c_str());
+
+        if (result == 0) {
+            std::cout << "Git fetch process completed" << std::endl;
+        } else {
+            std::cerr << "Failed to run Git fetch process" << std::endl;
+        }
+
+        return 0;
     } else {
-        std::cerr << "Failed to start the process." << '\n';
+        // Батьківський процес
+        int status;
+        waitpid(pid, &status, 0);
+
+        if (WIFEXITED(status)) {
+            int exitStatus = WEXITSTATUS(status);
+            std::cout << "Child process exited with status: " << exitStatus << std::endl;
+        } else {
+            std::cerr << "Child process did not exit normally" << std::endl;
+        }
     }
 
     return 0;
